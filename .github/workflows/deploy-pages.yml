@@ -1,0 +1,73 @@
+name: Deploy to GitHub Pages
+
+on:
+  # Redeploy the public site whenever main changes.
+  push:
+    branches:
+      - main
+  # Allow manual deploys from the Actions tab too.
+  workflow_dispatch:
+
+# Required permissions for GitHub Pages artifact upload and deployment.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Cancel older in-progress deploys if a newer push arrives.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Full history is needed so we can count commits from baselineCommit.
+          fetch-depth: 0
+
+      - name: Generate semantic version file
+        shell: bash
+        run: |
+          # Read the manually managed major/minor line and its baseline commit.
+          MAJOR=$(python -c 'import json; print(json.load(open("version.json"))["major"])')
+          MINOR=$(python -c 'import json; print(json.load(open("version.json"))["minor"])')
+          BASELINE_COMMIT=$(python -c 'import json; print(json.load(open("version.json"))["baselineCommit"])')
+
+          # Count commits since the baseline release-line commit.
+          PATCH_COUNT=$(git rev-list --count "${BASELINE_COMMIT}..HEAD")
+
+          # The baseline commit itself should publish as patch 1.
+          if [ "${PATCH_COUNT}" -eq 0 ]; then
+            PATCH=1
+          else
+            PATCH=$((PATCH_COUNT + 1))
+          fi
+
+          # Write the computed version into the frontend module the page imports.
+          VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          printf 'export const version = "%s";\n' "${VERSION}" > js/version.js
+          echo "Generated version ${VERSION}"
+
+      # Configure the repository for GitHub Pages deployment.
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      # Upload the static site files as the Pages deployment artifact.
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      # Publish the uploaded artifact to the GitHub Pages environment.
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

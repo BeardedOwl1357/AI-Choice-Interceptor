@@ -37,3 +37,9 @@
     width: 100px;
     height: 100px;
 }
+
+.site-version{
+    margin-top: 16px;
+    font-size: 14px;
+    color: #555;
+}
